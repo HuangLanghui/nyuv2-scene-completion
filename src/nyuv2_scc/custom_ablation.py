@@ -1,3 +1,10 @@
+"""Building blocks for the custom ablation studies.
+
+Helpers shared by the ``scripts/*_ablation.py`` experiments: confusion-count
+metric accumulation, and post-processing / input-perturbation operators
+(isolated-voxel removal, median filtering, partial-observation generation, ...)
+whose effect on completion quality the ablations measure.
+"""
 from __future__ import annotations
 
 from typing import Dict, Iterable, List, Sequence
@@ -10,6 +17,7 @@ from .geometry import make_incomplete_input
 
 
 def counts_to_metrics(tp: int, fp: int, fn: int) -> Dict[str, float]:
+    """Convert accumulated TP/FP/FN counts into IoU / precision / recall / F1."""
     eps = 1e-8
     iou = tp / (tp + fp + fn + eps)
     precision = tp / (tp + fp + eps)
@@ -27,6 +35,7 @@ def counts_to_metrics(tp: int, fp: int, fn: int) -> Dict[str, float]:
 
 
 def update_counts(counts: Dict[str, int], pred: torch.Tensor, target: torch.Tensor) -> None:
+    """Accumulate TP/FP/FN counts for one batch into the running ``counts`` dict (in place)."""
     pred = pred.bool()
     target = target.bool()
     counts["tp"] += int(torch.logical_and(pred, target).sum().item())

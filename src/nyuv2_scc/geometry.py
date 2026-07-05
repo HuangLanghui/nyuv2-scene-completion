@@ -1,3 +1,18 @@
+"""Geometry core: depth maps <-> 3D point clouds <-> voxel occupancy grids.
+
+This module holds the pure-geometry building blocks the dataset relies on:
+
+* :func:`depth_to_pointcloud` -- back-project a 2D depth map into a 3D point
+  cloud using the pinhole camera model and the NYUv2 intrinsics.
+* :func:`points_to_occupancy` -- bin those points into a binary voxel grid
+  (with optional morphological dilation to close pinholes between points).
+* :func:`make_incomplete_input` -- degrade an input volume (dropout + cuboid
+  cut-outs) to simulate the missing observations a completion model must fill.
+* :func:`occupancy_to_points` -- the inverse of voxelization, used only to turn
+  a grid back into points for visualization / PLY export.
+
+Grid convention throughout the project: axis order is ``[D, H, W] == [z, y, x]``.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -9,6 +24,8 @@ from scipy import ndimage
 
 @dataclass(frozen=True)
 class CameraIntrinsics:
+    """Pinhole camera intrinsics (focal lengths ``fx, fy`` and principal point ``cx, cy``)."""
+
     fx: float
     fy: float
     cx: float
@@ -17,6 +34,12 @@ class CameraIntrinsics:
 
 @dataclass(frozen=True)
 class VoxelSpec:
+    """Voxel grid definition: resolution and the metric bounds it covers.
+
+    ``grid_size`` is ``(D, H, W) == (z, y, x)`` and ``bounds`` maps each axis
+    name ``"x"/"y"/"z"`` to its ``(min, max)`` extent in metres.
+    """
+
     grid_size: Tuple[int, int, int]  # D, H, W == z, y, x
     bounds: Dict[str, Tuple[float, float]]
 

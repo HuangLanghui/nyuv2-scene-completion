@@ -1,3 +1,18 @@
+"""Dataset construction: real NYUv2 depth maps -> occupancy volume pairs.
+
+This module turns the official NYUv2 ``.mat`` file into ``(input, target)``
+occupancy pairs the network trains on. For each scene:
+
+* the **input** occupancy is built from ``rawDepths`` (the raw Kinect depth,
+  which has holes/missing regions) -> an *incomplete* volume;
+* the **target/proxy** occupancy is built from ``depths`` (NYUv2's in-painted
+  depth) -> a *more complete* volume the model learns to predict.
+
+The heavy lifting (depth -> point cloud -> voxel grid) lives in
+:mod:`nyuv2_scc.geometry`; this module wires it together, caches the result to
+``.npz`` so it is computed only once, applies training-time input degradation,
+and produces reproducible train/val/test splits.
+"""
 from __future__ import annotations
 
 import json
@@ -19,6 +34,11 @@ from .nyuv2_io import NYUv2MatFile
 
 
 def build_specs(data_cfg: Dict) -> Tuple[CameraIntrinsics, VoxelSpec]:
+    """Build the camera-intrinsics and voxel-grid specs from the ``data`` config.
+
+    Returns ``(CameraIntrinsics, VoxelSpec)`` -- the intrinsics used to back-project
+    depth into 3D, and the grid size + metric bounds used to voxelize it.
+    """
     intr = data_cfg["intrinsics"]
     camera = CameraIntrinsics(
         fx=float(intr["fx"]),
@@ -36,6 +56,12 @@ def build_specs(data_cfg: Dict) -> Tuple[CameraIntrinsics, VoxelSpec]:
 
 
 def make_splits(num_samples: int, train_ratio: float, val_ratio: float, seed: int) -> Dict[str, List[int]]:
+    """Deterministically shuffle sample indices into train/val/test lists.
+
+    The ``seed`` fixes the shuffle so every run (training, evaluation,
+    visualization) sees the exact same split -- essential for the test set to
+    stay unseen. The test split gets whatever remains after train and val.
+    """
     rng = np.random.default_rng(seed)
     indices = np.arange(num_samples)
     rng.shuffle(indices)
@@ -87,10 +113,16 @@ class NYUv2OccupancyDataset(Dataset):
         return len(self.indices)
 
     def _cache_file(self, nyu_index: int) -> Path:
+        """Cache path for one scene, keyed by scene index, source keys and grid size.
+
+        Encoding the grid size in the filename means different resolutions
+        (e.g. the 32/48/64 voxel ablations) never collide in the cache.
+        """
         grid_tag = "x".join(map(str, self.spec.grid_size))
         return self.cache_dir / f"nyuv2_{nyu_index:04d}_{self.input_key}_to_{self.target_key}_{grid_tag}.npz"
 
     def _depth_to_occ(self, depth: np.ndarray) -> np.ndarray:
+        """Convert one depth map to an occupancy volume (project -> voxelize -> dilate)."""
         points = depth_to_pointcloud(
             depth,
             self.camera,
@@ -105,6 +137,12 @@ class NYUv2OccupancyDataset(Dataset):
         )
 
     def _load_or_create_pair(self, nyu_index: int) -> Tuple[np.ndarray, np.ndarray]:
+        """Return the ``(input_occ, target_occ)`` pair for one scene, using the cache.
+
+        On a cache miss the depth maps are read from the ``.mat`` file, converted
+        to occupancy, reconciled (see the inline note below), and saved so the
+        expensive projection/voxelization runs only once per scene.
+        """
         cache_path = self._cache_file(nyu_index)
         if cache_path.exists():
             cached = np.load(cache_path)
@@ -125,6 +163,14 @@ class NYUv2OccupancyDataset(Dataset):
         return input_occ.astype(np.float32), target_occ.astype(np.float32)
 
     def __getitem__(self, item: int) -> Dict[str, torch.Tensor]:
+        """Return one training example as ``{"input", "target", "index"}`` tensors.
+
+        For the ``train`` split the input is additionally degraded on-the-fly
+        (random voxel dropout + cuboid cut-outs) via
+        :func:`nyuv2_scc.geometry.make_incomplete_input`, so the network sees a
+        different, harder incomplete observation each epoch. The seed is derived
+        from the scene index for reproducibility. Val/test inputs are left as-is.
+        """
         nyu_index = self.indices[item]
         input_occ, target_occ = self._load_or_create_pair(nyu_index)
 
@@ -147,6 +193,11 @@ class NYUv2OccupancyDataset(Dataset):
 
 
 def prepare_splits_from_config(mat_path: str | Path, data_cfg: Dict) -> Dict[str, List[int]]:
+    """Read the scene count from the ``.mat`` file and build the splits.
+
+    Honours the optional ``max_samples`` cap (used to run on a subset while
+    developing) before delegating to :func:`make_splits`.
+    """
     with NYUv2MatFile(mat_path) as reader:
         n = reader.num_samples(data_cfg.get("target_key", "depths"))
     max_samples = data_cfg.get("max_samples")
@@ -161,6 +212,7 @@ def prepare_splits_from_config(mat_path: str | Path, data_cfg: Dict) -> Dict[str
 
 
 def save_splits(splits: Dict[str, List[int]], path: str | Path) -> None:
+    """Write the split index lists to JSON for reproducibility / later inspection."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:

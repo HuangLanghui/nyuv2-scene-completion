@@ -1,3 +1,10 @@
+"""Lightweight visualization entry points.
+
+Thin, stable wrappers kept for backward compatibility. The report-quality
+plotting actually lives in :mod:`nyuv2_scc.advanced_visualization`; this module
+just re-exposes the two figures used most often: the input/prediction/target
+triplet and the RGB + rawDepths + depths preview.
+"""
 from __future__ import annotations
 
 from pathlib import Path

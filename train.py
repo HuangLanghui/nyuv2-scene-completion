@@ -1,4 +1,24 @@
 #!/usr/bin/env python
+"""Train the residual-attention 3D U-Net on real NYUv2 depth occupancy.
+
+Usage
+-----
+    python train.py --config configs/default.yaml
+    python train.py --config configs/default.yaml --resume outputs/checkpoints/last.pt
+
+What it does
+------------
+1. Builds reproducible train/val/test splits from the NYUv2 ``.mat`` file and
+   saves them to ``outputs/metrics/splits.json``.
+2. Trains the model with the weighted BCE + Dice loss (see
+   :mod:`nyuv2_scc.losses`) using AdamW.
+3. After every epoch, writes ``last.pt`` and, whenever validation IoU improves,
+   ``best.pt``; the full per-epoch history goes to
+   ``outputs/metrics/train_history.json`` for the training-curve figure.
+
+All hyper-parameters (grid size, epochs, batch size, loss weights, ...) come
+from the YAML config, so this file contains no magic numbers.
+"""
 from __future__ import annotations
 
 import argparse
@@ -20,6 +40,7 @@ from nyuv2_scc.train_eval import run_one_epoch
 
 
 def main():
+    """Parse CLI arguments, run the training loop, and checkpoint the best model."""
     parser = argparse.ArgumentParser(description="Train residual-attention 3D U-Net on real NYUv2 depth occupancy.")
     parser.add_argument("--config", default="configs/default.yaml")
     parser.add_argument("--resume", default=None, help="Optional checkpoint path")

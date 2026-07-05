@@ -1,4 +1,17 @@
 #!/usr/bin/env python
+"""Evaluate a trained checkpoint on a NYUv2 occupancy split.
+
+Usage
+-----
+    python evaluate.py --config configs/default.yaml \
+        --checkpoint outputs/checkpoints/best.pt --split test
+
+Runs a single no-grad pass over the requested split using the shared
+:func:`nyuv2_scc.train_eval.run_one_epoch`, then prints and saves the
+IoU / Precision / Recall / F1 / loss to ``outputs/metrics/<split>_metrics.json``.
+Because the split seed is fixed in the config, the ``test`` set here is exactly
+the held-out data never seen during training.
+"""
 from __future__ import annotations
 
 import argparse
@@ -20,6 +33,7 @@ from nyuv2_scc.train_eval import run_one_epoch
 
 
 def main():
+    """Parse CLI arguments, evaluate the checkpoint, and write the metrics JSON."""
     parser = argparse.ArgumentParser(description="Evaluate a trained model on the NYUv2 proxy occupancy test split.")
     parser.add_argument("--config", default="configs/default.yaml")
     parser.add_argument("--checkpoint", default="outputs/checkpoints/best.pt")

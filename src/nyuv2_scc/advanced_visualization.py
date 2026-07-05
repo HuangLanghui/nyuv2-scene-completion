@@ -1,3 +1,18 @@
+"""Report-quality figures for the occupancy-completion results.
+
+Every figure the coursework report uses is produced here from the JSON metrics
+and the occupancy volumes. Two families of plots:
+
+* **Quantitative** -- training curves, metric bars, threshold sweeps and
+  experiment/ablation comparisons, read straight from the ``outputs/metrics``
+  JSON files.
+* **Qualitative** -- 3D scatter triplets (input / prediction / target), multi-view
+  projection galleries and TP/FP/FN error maps that *show* the completion, which
+  is what the examiner asked for beyond the summary numbers.
+
+All functions share a common publication matplotlib style
+(:func:`set_publication_style`) and save straight to disk.
+"""
 from __future__ import annotations
 
 import json
@@ -88,6 +103,7 @@ def plot_training_curves(history_path: str | Path, out_path: str | Path) -> None
 
 
 def plot_metrics_bar(metrics_path: str | Path, out_path: str | Path, title: str = "Test Metrics") -> None:
+    """Bar chart of the four headline test metrics (IoU / Precision / Recall / F1)."""
     set_publication_style()
     metrics = load_json(metrics_path)
     names = ["iou", "precision", "recall", "f1"]
@@ -117,6 +133,11 @@ def plot_metrics_bar(metrics_path: str | Path, out_path: str | Path, title: str 
 
 
 def plot_threshold_sweep(results_path: str | Path, out_path: str | Path) -> None:
+    """Line plot of each metric vs. the occupancy probability threshold.
+
+    Shows the precision/recall trade-off as the binarisation threshold moves,
+    justifying the operating point used elsewhere.
+    """
     set_publication_style()
     results = load_json(results_path)
     rows = results["results"] if isinstance(results, dict) and "results" in results else results
@@ -140,6 +161,7 @@ def plot_threshold_sweep(results_path: str | Path, out_path: str | Path) -> None
 
 
 def plot_missingness_results(results_path: str | Path, out_path: str | Path) -> None:
+    """Plot metrics as the extra input-missingness level increases (robustness study)."""
     set_publication_style()
     results = load_json(results_path)
     rows = results["results"] if isinstance(results, dict) and "results" in results else results
@@ -165,6 +187,11 @@ def plot_missingness_results(results_path: str | Path, out_path: str | Path) -> 
 
 
 def _configure_3d_axis(ax, spec: VoxelSpec) -> None:
+    """Set a consistent camera view, axis limits and labels for the 3D scatter plots.
+
+    Plots use ``(x, z, -y)`` so the scene appears upright with depth going into
+    the page, matching how the room is actually oriented.
+    """
     ax.set_xlabel("x")
     ax.set_ylabel("z")
     ax.set_zlabel("-y")
@@ -188,6 +215,7 @@ def _scatter_volume(ax, volume: np.ndarray, spec: VoxelSpec, max_points: int = 7
 
 
 def _projection(volume: np.ndarray, axes: tuple[int, ...]) -> np.ndarray:
+    """Collapse a 3D occupancy volume to a 2D silhouette by max-projecting over ``axes``."""
     return np.max(volume.squeeze() > 0.5, axis=axes).astype(np.float32)
 
 
@@ -364,6 +392,7 @@ def save_error_map(
 
 
 def plot_experiment_comparison(results_path: str | Path, out_path: str | Path, title: str = "Experiment Comparison") -> None:
+    """Grouped IoU/F1 bars comparing named variants of an ablation study."""
     set_publication_style()
     payload = load_json(results_path)
     rows = payload["results"] if isinstance(payload, dict) and "results" in payload else payload

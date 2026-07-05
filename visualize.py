@@ -1,4 +1,19 @@
 #!/usr/bin/env python
+"""Render input / prediction / target occupancy triplets for trained checkpoints.
+
+Usage
+-----
+    python visualize.py --config configs/default.yaml \
+        --checkpoint outputs/checkpoints/best.pt --split test --num 6
+
+For each of the first ``--num`` scenes in the split, this runs the model, binarises
+the prediction at the configured threshold, and saves a report-ready figure
+(3D scatter + top-view projection of input, prediction and target) to
+``outputs/visualizations/``. This is the qualitative evidence that the model
+actually completes the scene, not just the summary metrics.
+
+For a quick one-command end-to-end demonstration on a few samples, see ``demo.py``.
+"""
 from __future__ import annotations
 
 import argparse
@@ -18,6 +33,7 @@ from nyuv2_scc.advanced_visualization import save_occupancy_triplet_advanced
 
 
 def main():
+    """Parse CLI arguments, run the model on a few scenes, and save triplet figures."""
     parser = argparse.ArgumentParser(description="Visualize input / prediction / target occupancy volumes.")
     parser.add_argument("--config", default="configs/default.yaml")
     parser.add_argument("--checkpoint", default="outputs/checkpoints/best.pt")

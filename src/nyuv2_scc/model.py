@@ -1,3 +1,23 @@
+"""3D residual-attention U-Net for occupancy completion.
+
+The network is a volumetric encoder-decoder (U-Net) that takes an incomplete
+binary occupancy grid ``(B, 1, D, H, W)`` and predicts a per-voxel occupancy
+logit of the same spatial size. It is "SOTA-inspired" in that it combines three
+ingredients common in strong 3D completion models, kept deliberately lightweight
+so the whole thing trains on a single GPU (~1.4M parameters at ``base_channels=8``):
+
+* **Residual blocks** (:class:`ResidualBlock3D`) -- ease optimisation of a deep
+  3D stack via skip connections.
+* **Squeeze-and-excitation attention** (:class:`SEBlock3D`) -- cheap channel
+  attention that lets the network re-weight feature channels; toggled by
+  ``use_attention`` for the attention ablation.
+* **U-Net encoder/decoder with skip connections** -- the four down/up stages
+  recover fine geometry by fusing high-resolution encoder features into the
+  decoder.
+
+The single output channel is a raw logit (no sigmoid); the sigmoid + threshold
+are applied by the loss and metric code.
+"""
 from __future__ import annotations
 
 import torch
@@ -24,6 +44,12 @@ class SEBlock3D(nn.Module):
 
 
 class ResidualBlock3D(nn.Module):
+    """Two 3x3x3 conv layers with a residual (skip) connection and optional SE attention.
+
+    The 1x1x1 ``skip`` convolution is only used when the channel count changes,
+    so the residual add always has matching shapes.
+    """
+
     def __init__(self, in_channels: int, out_channels: int, use_attention: bool = True):
         super().__init__()
         self.conv1 = nn.Conv3d(in_channels, out_channels, kernel_size=3, padding=1, bias=False)
@@ -45,6 +71,8 @@ class ResidualBlock3D(nn.Module):
 
 
 class DownBlock(nn.Module):
+    """Encoder stage: halve the spatial resolution (max-pool), then a residual block."""
+
     def __init__(self, in_channels: int, out_channels: int, use_attention: bool = True):
         super().__init__()
         self.pool = nn.MaxPool3d(2)
@@ -55,6 +83,12 @@ class DownBlock(nn.Module):
 
 
 class UpBlock(nn.Module):
+    """Decoder stage: upsample, concatenate the matching encoder skip, then a residual block.
+
+    ``in_channels`` are the deeper (lower-resolution) features being upsampled and
+    ``skip_channels`` are the encoder features fused in via the U-Net skip.
+    """
+
     def __init__(self, in_channels: int, skip_channels: int, out_channels: int, use_attention: bool = True):
         super().__init__()
         self.up = nn.ConvTranspose3d(in_channels, out_channels, kernel_size=2, stride=2)
@@ -87,11 +121,19 @@ class ResidualAttentionUNet3D(nn.Module):
         self.out = nn.Conv3d(b, 1, kernel_size=1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Map an incomplete occupancy grid to per-voxel occupancy logits.
+
+        ``x`` has shape ``(B, 1, D, H, W)``; the return value has the same
+        spatial shape ``(B, 1, D, H, W)`` and contains raw logits.
+        """
+        # Encoder: progressively downsample, keeping each stage's features (e1..e4)
+        # so the decoder can fuse them back in through the U-Net skip connections.
         e1 = self.enc1(x)
         e2 = self.enc2(e1)
         e3 = self.enc3(e2)
         e4 = self.enc4(e3)
         z = self.bottleneck(e4)
+        # Decoder: upsample and fuse the matching encoder skip at each stage.
         d4 = self.up4(z, e4)
         d3 = self.up3(d4, e3)
         d2 = self.up2(d3, e2)
@@ -100,4 +142,5 @@ class ResidualAttentionUNet3D(nn.Module):
 
 
 def count_parameters(model: nn.Module) -> int:
+    """Return the number of trainable parameters (used for the model summary line)."""
     return sum(p.numel() for p in model.parameters() if p.requires_grad)

@@ -1,3 +1,10 @@
+"""ASCII PLY point-cloud export.
+
+Occupancy grids are turned back into 3D points (see
+:func:`nyuv2_scc.geometry.occupancy_to_points`) and written here as ``.ply``
+files that open in MeshLab / CloudCompare / Blender, so the completed scenes can
+be inspected as real 3D geometry rather than only as rendered figures.
+"""
 from __future__ import annotations
 
 from pathlib import Path
